@@ -1,105 +1,237 @@
-"""MEDIC CARE - database layer.
+"""MEDIC CARE - Supabase database layer."""
 
-Currently SQLite (temporary). Lahat ng database access ay nandito lang, kaya kapag
-dumating na yung actual database, ito lang ang papalitan - hindi na ang app.py.
-
-Same structure ito ng dating localStorage:
-    users      -> id, password hash, profile (name/email/phone/code/photo)
-    user_data  -> per-account key/value (appointments, profileExtra, ...)
-"""
 import json
 import os
-import sqlite3
 
-DB_PATH = os.environ.get(
-    "DATABASE_PATH",
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "medic_care.db"),
+from supabase import create_client, Client
+
+
+# ---------------------------------------------------------
+# SUPABASE CONNECTION
+# ---------------------------------------------------------
+
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_SECRET_KEY")
+
+if not SUPABASE_URL:
+    raise RuntimeError("SUPABASE_URL environment variable is missing.")
+
+if not SUPABASE_KEY:
+    raise RuntimeError("SUPABASE_SECRET_KEY environment variable is missing.")
+
+supabase: Client = create_client(
+    SUPABASE_URL,
+    SUPABASE_KEY
 )
 
-PROFILE_FIELDS = ("name", "email", "phone", "code", "photo")
+
+# ---------------------------------------------------------
+# PROFILE FIELDS
+# ---------------------------------------------------------
+
+PROFILE_FIELDS = (
+    "name",
+    "email",
+    "phone",
+    "code",
+    "photo",
+)
 
 
-def _conn():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
-
+# ---------------------------------------------------------
+# DATABASE INITIALIZATION
+# ---------------------------------------------------------
 
 def init_db():
-    with _conn() as c:
-        c.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS users (
-                id         TEXT PRIMARY KEY,          -- normalized email or phone
-                pw_hash    TEXT NOT NULL,
-                name       TEXT NOT NULL DEFAULT '',
-                email      TEXT NOT NULL DEFAULT '',
-                phone      TEXT NOT NULL DEFAULT '',
-                code       TEXT NOT NULL DEFAULT '+63',
-                photo      TEXT NOT NULL DEFAULT '',
-                created_at TEXT NOT NULL DEFAULT (datetime('now'))
-            );
-            CREATE TABLE IF NOT EXISTS user_data (
-                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                key     TEXT NOT NULL,
-                value   TEXT NOT NULL,                -- JSON
-                PRIMARY KEY (user_id, key)
-            );
-            """
-        )
+    """
+    Supabase tables are created in the Supabase dashboard,
+    so there is no local database initialization here.
+    """
+    return True
 
+
+# ---------------------------------------------------------
+# USERS
+# ---------------------------------------------------------
 
 def get_user(uid):
-    with _conn() as c:
-        row = c.execute("SELECT * FROM users WHERE id = ?", (uid,)).fetchone()
-    return dict(row) if row else None
+    """Get one user by ID."""
+
+    response = (
+        supabase
+        .table("users")
+        .select("*")
+        .eq("id", uid)
+        .limit(1)
+        .execute()
+    )
+
+    if not response.data:
+        return None
+
+    return response.data[0]
 
 
 def create_user(uid, pw_hash, profile):
-    """Returns False if the account already exists."""
+    """Create a user. Returns False if the account already exists."""
+
+    existing = get_user(uid)
+
+    if existing:
+        return False
+
+    data = {
+        "id": uid,
+        "pw_hash": pw_hash,
+        "name": profile.get("name", ""),
+        "email": profile.get("email", ""),
+        "phone": profile.get("phone", ""),
+        "code": profile.get("code", "+63"),
+        "photo": profile.get("photo", ""),
+    }
+
     try:
-        with _conn() as c:
-            c.execute(
-                "INSERT INTO users (id, pw_hash, name, email, phone, code, photo) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (uid, pw_hash, profile["name"], profile["email"], profile["phone"],
-                 profile["code"], profile["photo"]),
-            )
+        (
+            supabase
+            .table("users")
+            .insert(data)
+            .execute()
+        )
+
         return True
-    except sqlite3.IntegrityError:
+
+    except Exception as e:
+        print("Supabase create_user error:", e)
         return False
 
 
 def update_profile(uid, patch):
-    fields = {k: str(v) for k, v in patch.items() if k in PROFILE_FIELDS}
+    """Update the user's profile."""
+
+    fields = {
+        key: str(value)
+        for key, value in patch.items()
+        if key in PROFILE_FIELDS
+    }
+
     if not fields:
         return
-    sets = ", ".join(f"{k} = ?" for k in fields)
-    with _conn() as c:
-        c.execute(f"UPDATE users SET {sets} WHERE id = ?", (*fields.values(), uid))
+
+    try:
+        (
+            supabase
+            .table("users")
+            .update(fields)
+            .eq("id", uid)
+            .execute()
+        )
+
+    except Exception as e:
+        print("Supabase update_profile error:", e)
+        raise
 
 
 def set_password_hash(uid, pw_hash):
-    with _conn() as c:
-        c.execute("UPDATE users SET pw_hash = ? WHERE id = ?", (pw_hash, uid))
+    """Update the user's password hash."""
+
+    try:
+        (
+            supabase
+            .table("users")
+            .update({
+                "pw_hash": pw_hash
+            })
+            .eq("id", uid)
+            .execute()
+        )
+
+    except Exception as e:
+        print("Supabase set_password_hash error:", e)
+        raise
 
 
 def delete_user(uid):
-    with _conn() as c:
-        c.execute("DELETE FROM users WHERE id = ?", (uid,))   # user_data goes with it (CASCADE)
+    """Delete a user and their associated user data."""
 
+    try:
+        (
+            supabase
+            .table("user_data")
+            .delete()
+            .eq("user_id", uid)
+            .execute()
+        )
+
+        (
+            supabase
+            .table("users")
+            .delete()
+            .eq("id", uid)
+            .execute()
+        )
+
+    except Exception as e:
+        print("Supabase delete_user error:", e)
+        raise
+
+
+# ---------------------------------------------------------
+# USER DATA
+# ---------------------------------------------------------
 
 def get_all_data(uid):
-    with _conn() as c:
-        rows = c.execute("SELECT key, value FROM user_data WHERE user_id = ?", (uid,)).fetchall()
-    return {r["key"]: json.loads(r["value"]) for r in rows}
+    """Return all key/value data belonging to a user."""
+
+    response = (
+        supabase
+        .table("user_data")
+        .select("key,value")
+        .eq("user_id", uid)
+        .execute()
+    )
+
+    result = {}
+
+    for row in response.data or []:
+        value = row.get("value")
+
+        # If value was stored as JSON text
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        result[row["key"]] = value
+
+    return result
 
 
 def set_data(uid, key, value):
-    with _conn() as c:
-        c.execute(
-            "INSERT INTO user_data (user_id, key, value) VALUES (?, ?, ?) "
-            "ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value",
-            (uid, key, json.dumps(value)),
+    """Create or update a user's data."""
+
+    # Store JSON-compatible data.
+    #
+    # If the Supabase 'value' column is JSONB,
+    # storing the Python object directly is preferred.
+
+    data = {
+        "user_id": uid,
+        "key": key,
+        "value": value,
+    }
+
+    try:
+        (
+            supabase
+            .table("user_data")
+            .upsert(
+                data,
+                on_conflict="user_id,key"
+            )
+            .execute()
         )
+
+    except Exception as e:
+        print("Supabase set_data error:", e)
+        raise
