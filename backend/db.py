@@ -232,6 +232,6 @@ def set_data(uid, key, value):
             .execute()
         )
 
-    except Exception as e:
-        print("Supabase set_data error:", e)
-        raise
+except Exception as e:
+    print("Supabase create_user error:", repr(e))
+    raise
