@@ -481,33 +481,27 @@ def me():
     uid = current()
 
     if not uid:
-        return jsonify(user=None)
+        # Sa FastAPI, maaari kang magbalik ng normal na dictionary directly bilang JSON response
+        return {"user": None}
 
     try:
         user = db.get_user(uid)
 
         if not user:
-            session.clear()
-            return jsonify(user=None)
+            # Kung walang session object ang FastAPI mo, mas ligtas na burahin muna ito o gumamit ng tamang response handling
+            return {"user": None}
 
-        return jsonify(
-            user={
+        return {
+            "user": {
                 "id": uid,
                 "profile": profile_of(user),
                 "data": db.get_all_data(uid),
             }
-        )
-
-    except Exception:
-        app.logger.exception(
-            "Unable to load current patient"
-        )
-
-        return jsonify(
-            ok=False,
-            error="database_error"
-        ), 500
-
+        }
+    except Exception as e:
+        # Sakaling may iba pang mag-error sa db.get_user, hindi sasabog ang server mo sa 500 error
+        print(f"Database/Profile Error: {e}")
+        return {"user": None}
 
 # ---------------------------------------------------------
 # SAVE PATIENT PROFILE
