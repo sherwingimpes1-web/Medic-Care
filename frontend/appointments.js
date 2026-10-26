@@ -2,6 +2,59 @@
 
 /* ---------- Data ---------- */
 // To use real photos, add  photo: "images/dr-name.jpg"  to a doctor below.
+import { supabase } from './auth.js';
+
+async function loadMyBookedAppointments() {
+  // 1. Alamin kung sinong user ang naka-login para sariling records lang ang hilahin
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) {
+    alert("Mangyaring mag-login para makita ang inyong mga appointment.");
+    window.location.href = 'profile.html';
+    return;
+  }
+
+  // 2. Hilahin ang listahan ng appointments mula sa Supabase gamit ang secure session filter
+  const { data: appointmentsList, error } = await supabase
+    .from('appointments')
+    .select('*')
+    .eq('patientid', user.id) // Filter para hindi makita ang records ng ibang tao
+    .order('appointmentdate', { ascending: true });
+
+  if (error) {
+    console.error("❌ DB Error sa Pag-fetch ng Appointments:", error.message);
+    return;
+  }
+
+  // 3. I-display ang mga nakuha nating data sa inyong HTML Table
+  const tableBody = document.getElementById('appointmentTableBody');
+  if (!tableBody) return;
+
+  tableBody.innerHTML = ''; // Linisin muna ang lumang laman ng table rows
+
+  if (appointmentsList.length === 0) {
+    tableBody.innerHTML = <tr><td colspan="5" style="text-align:center;">Wala pa kayong appointment na nabubook.</td></tr>;
+    return;
+  }
+
+  // I-loop ang mga records na pumasok mula sa Supabase papuntang HTML elements
+  appointmentsList.forEach((appointment) => {
+    const row = `
+      <tr>
+        <td>${appointment.appointmentdate}</td>
+        <td>${appointment.appointmenttime}</td>
+        <td>${appointment.servicecategory}</td>
+        <td>${appointment.specificservice}</td>
+        <td><span class="status-badge status-${appointment.appointmentstatus}">${appointment.appointmentstatus}</span></td>
+      </tr>
+    `;
+    tableBody.innerHTML += row;
+  });
+}
+
+// Awtomatikong patakbuhin ang pagbasang ito pagkabukas ng appointment.html mula sa navbar
+window.addEventListener('DOMContentLoaded', loadMyBookedAppointments);
+
 const DOCTORS = [
   { id: "celestia",  name: "Dr. Celestia Santos", spec: "OB GYN",     skin: "#8a5a3c", hair: "#1d1410", style: "bun"   },
   { id: "rich",      name: "Dr. Rich Reyes",      spec: "PEDIATRICS", skin: "#d9a982", hair: "#3a2a20", style: "short" },
