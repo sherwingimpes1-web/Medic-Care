@@ -3,7 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
     <title data-i18n="sig.doctitle">Medic Care | Sign Up</title>
+
     <script src="auth.js"></script>
     <link rel="stylesheet" href="signup.css">
 </head>
@@ -14,34 +16,103 @@
         <form class="signup-form" id="signupForm" novalidate>
 
             <h1 data-i18n="sig.h1">Create your account</h1>
-            <p class="subtitle" data-i18n="sig.sub">Let's get started!</p>
 
+            <p class="subtitle" data-i18n="sig.sub">
+                Let's get started!
+            </p>
+
+            <!-- Full Name -->
             <div class="form-group">
-                <label for="emailOrPhone" data-i18n="sig.id">Email or Phone Number</label>
-                <input type="text" id="emailOrPhone" name="emailOrPhone"
-                    placeholder="Enter your email or phone number" data-i18n-ph="sig.id.ph" autocomplete="username">
+                <label for="fullName">Full Name</label>
+
+                <input
+                    type="text"
+                    id="fullName"
+                    name="fullName"
+                    placeholder="Enter your full name"
+                    autocomplete="name"
+                    maxlength="200"
+                    required
+                >
+
+                <div class="msg" id="nameMsg"></div>
+            </div>
+
+            <!-- Email or Phone Number -->
+            <div class="form-group">
+                <label for="emailOrPhone" data-i18n="sig.id">
+                    Email or Phone Number
+                </label>
+
+                <input
+                    type="text"
+                    id="emailOrPhone"
+                    name="emailOrPhone"
+                    placeholder="Enter your email or phone number"
+                    data-i18n-ph="sig.id.ph"
+                    autocomplete="username"
+                    required
+                >
+
                 <div class="msg" id="idMsg"></div>
             </div>
 
+            <!-- Password -->
             <div class="form-group">
-                <label for="password" data-i18n="sig.pw">Password</label>
-                <input type="password" id="password" name="password"
-                    placeholder="Create your password" data-i18n-ph="sig.pw.ph" autocomplete="new-password">
+                <label for="password" data-i18n="sig.pw">
+                    Password
+                </label>
+
+                <input
+                    type="password"
+                    id="password"
+                    name="password"
+                    placeholder="Create your password"
+                    data-i18n-ph="sig.pw.ph"
+                    autocomplete="new-password"
+                    required
+                >
+
                 <div class="msg" id="pwMsg"></div>
             </div>
 
+            <!-- Confirm Password -->
             <div class="form-group">
-                <label for="confirmPassword" data-i18n="sig.cf">Confirm Password</label>
-                <input type="password" id="confirmPassword" name="confirmPassword"
-                    placeholder="Confirm your password" data-i18n-ph="sig.cf.ph" autocomplete="new-password">
+                <label for="confirmPassword" data-i18n="sig.cf">
+                    Confirm Password
+                </label>
+
+                <input
+                    type="password"
+                    id="confirmPassword"
+                    name="confirmPassword"
+                    placeholder="Confirm your password"
+                    data-i18n-ph="sig.cf.ph"
+                    autocomplete="new-password"
+                    required
+                >
+
                 <div class="msg" id="cfMsg"></div>
             </div>
 
-            <button type="submit" class="create-button" data-i18n="sig.btn">Create Account</button>
+            <!-- Create Account -->
+            <button
+                type="submit"
+                class="create-button"
+                data-i18n="sig.btn"
+            >
+                Create Account
+            </button>
 
+            <!-- Login Link -->
             <p class="login-link">
-                <span data-i18n="sig.have">Already have an account?</span>
-                <a href="index.html" data-i18n="sig.login">Log In</a>
+                <span data-i18n="sig.have">
+                    Already have an account?
+                </span>
+
+                <a href="index.html" data-i18n="sig.login">
+                    Log In
+                </a>
             </p>
 
         </form>
@@ -50,5 +121,6 @@
 
     <script src="i18n.js"></script>
     <script src="signup.js"></script>
+
 </body>
 </html>
