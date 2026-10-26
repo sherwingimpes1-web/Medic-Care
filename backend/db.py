@@ -10,8 +10,9 @@ from supabase import create_client, Client
 # SUPABASE CONNECTION
 # ---------------------------------------------------------
 
-SUPABASE_URL = os.environ.get("https://reilluhyetzmxgczratk.supabase.co")
-SUPABASE_KEY = os.environ.get("sb_publishable_piRWUNzVR1ci5ChG8a8Ghg_Xefq4qe8")
+# INAYOS: Direktang string na o tamang Env Variable lookup para hindi mag-RuntimeError
+SUPABASE_URL = os.environ.get("SUPABASE_URL") or "https://reilluhyetzmxgczratk.supabase.co"
+SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_ANON_KEY") or "sb_publishable_piRWUNzVR1ci5ChG8a8Ghg_Xefq4qe8"
 
 if not SUPABASE_URL:
     raise RuntimeError("SUPABASE_URL environment variable is missing.")
@@ -210,11 +211,6 @@ def get_all_data(uid):
 def set_data(uid, key, value):
     """Create or update a user's data."""
 
-    # Store JSON-compatible data.
-    #
-    # If the Supabase 'value' column is JSONB,
-    # storing the Python object directly is preferred.
-
     data = {
         "user_id": uid,
         "key": key,
@@ -231,7 +227,24 @@ def set_data(uid, key, value):
             )
             .execute()
         )
+    # INAYOS: Inayos ang indentation ng except block na nagpapadapa sa script mo kanina
+    except Exception as e:
+        print("Supabase set_data error:", repr(e))
+        raise
 
-except Exception as e:
-    print("Supabase create_user error:", repr(e))
-    raise
+
+# ---------------------------------------------------------
+# AUTHENTICATION INTEGRATION
+# ---------------------------------------------------------
+
+def verify_supabase_token(token):
+    """
+    Tinatanggap ang token string mula sa app.py at vine-verify sa Supabase Auth API.
+    Ito ang magpapatigil sa unli-loop ng auth.js mo.
+    """
+    try:
+        response = supabase.auth.get_user(token)
+        return response.user
+    except Exception as e:
+        print(f"❌ Supabase token verification failed: {e}")
+        return None
