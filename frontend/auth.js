@@ -16,7 +16,7 @@
 
     /* ---------- Server calls ---------- */
 
-  async function await call(method, path, body) {
+  async function call(method, path, body) {
   try {
     const options = {
       method: method,
