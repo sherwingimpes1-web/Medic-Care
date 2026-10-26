@@ -10,8 +10,8 @@ from supabase import create_client, Client
 # SUPABASE CONNECTION
 # ---------------------------------------------------------
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_KEY = os.environ.get("SUPABASE_SECRET_KEY")
+SUPABASE_URL = os.environ.get("https://reilluhyetzmxgczratk.supabase.co")
+SUPABASE_KEY = os.environ.get("sb_publishable_piRWUNzVR1ci5ChG8a8Ghg_Xefq4qe8")
 
 if not SUPABASE_URL:
     raise RuntimeError("SUPABASE_URL environment variable is missing.")
