@@ -8,6 +8,36 @@
      diagnosis: "Acute Tonsillitis", status: "Completed" | "Pending" | "Cancelled", notes: "optional" }
 */
 // Records come straight from the appointments, so booking / rescheduling / cancelling shows up here automatically.
+
+import { supabase } from './auth.js';
+
+async function loadPatientMedicalHistory() {
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) {
+    alert("Mangyaring mag-login muna.");
+    window.location.href = 'profile.html';
+    return;
+  }
+
+  // Basahin ang medical history gamit ang secure column link na 'patient_id'
+  const { data: historyData, error } = await supabase
+    .from('medical_history')
+    .select('*')
+    .eq('patient_id', user.id); // Awtomatikong haharangin ng RLS kung hindi sa kanya ang ID
+
+  if (error) {
+    console.error("❌ DB Error sa Pag-fetch ng Medical History:", error.message);
+    return;
+  }
+
+  console.log("Nakuha na ang Medical History galing sa Supabase:", historyData);
+  
+  // Dito mo na pwedeng i-loop ang 'historyData' para ilagay sa inyong HTML katulad ng sa appointments
+}
+
+// Awtomatikong patakbuhin kapag kinlik sa Navbar ang Medical History page
+window.addEventListener('DOMContentLoaded', loadPatientMedicalHistory);
 const DOCS = { celestia: ["Dr. Celestia Santos", "OB GYN"], rich: ["Dr. Rich Reyes", "PEDIATRICS"], sebastian: ["Dr. Sebastian Reed", "CARDIOLOGY"],
                mich: ["Dr. Mich Collins", "OB GYN"], ana: ["Dr. Ana Lim", "DERMATOLOGY"], paolo: ["Dr. Paolo Cruz", "GENERAL MEDICINE"] };
 const pretty = (s) => String(s || "").toLowerCase().replace(/\b[a-z]/g, (c) => c.toUpperCase());
