@@ -39,7 +39,7 @@ import db
 # CONFIGURATION
 # ---------------------------------------------------------
 
-BASE = os.path.dirname(os.path.abspath(_file_))
+BASE = os.path.dirname(os.path.abspath(__file__))
 
 FRONTEND = os.path.abspath(
     os.path.join(BASE, "..", "frontend")
@@ -65,7 +65,7 @@ def _secret_key():
 
 
 app = Flask(
-    _name_,
+    __name__,
     static_folder=FRONTEND,
     static_url_path=""
 )
@@ -192,15 +192,29 @@ def body():
 
 
 def current():
-    """Return the signed-in account ID if it still exists."""
+    """Return the signed-in account ID if it exists in session or token."""
 
+    # 1. Subukan muna i-tsek sa Flask Session Cookie
     uid = session.get("uid")
-
-    if not uid:
-        return None
-
-    if db.get_user(uid):
+    if uid and db.get_user(uid):
         return uid
+
+    # 2. Kung wala sa session, i-tsek kung may Bearer Token mula sa auth.js
+    auth_header = request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        parts = auth_header.split(" ")
+        if len(parts) == 2:
+            token = parts[1]
+            try:
+                # Tinatawag ang verify_supabase_token function sa iyong db.py
+                supabase_user = db.verify_supabase_token(token)
+                if supabase_user:
+                    # I-return ang identifier (karaniwang email o id)
+                    # Siguraduhing tugma ito sa ginagamit mong format ng 'uid'
+                    user_id = supabase_user.email if hasattr(supabase_user, 'email') else supabase_user.id
+                    return normalize(user_id)
+            except Exception as e:
+                app.logger.error(f"Supabase token validation failed: {e}")
 
     return None
 
@@ -218,13 +232,14 @@ def profile_of(user):
 
 
 def login_required(fn):
-    """Require an authenticated patient session."""
+    """Require an authenticated patient session or token."""
 
     @wraps(fn)
     def wrapper(*args, **kwargs):
         uid = current()
 
         if not uid:
+            # 401 Unauthorized ang magpapatigil sa loop ng auth.js mo
             return jsonify(
                 ok=False,
                 error="unauthorized"
@@ -236,8 +251,33 @@ def login_required(fn):
 
 
 # ---------------------------------------------------------
-# SIGN UP
+# ROUTES / API ENDPOINTS
 # ---------------------------------------------------------
+
+@app.route("/api/me", methods=["GET"])
+@login_required
+def get_me(uid):
+    """Fetch current user profile for auth.js."""
+    try:
+        user = db.get_user(uid)
+        if not user:
+            return jsonify(
+                ok=False, 
+                error="user_not_found"
+            ), 404
+            
+        return jsonify(
+            ok=True,
+            id=uid,
+            profile=profile_of(user)
+        )
+    except Exception:
+        app.logger.exception("Error loading current user context")
+        return jsonify(
+            ok=False,
+            error="database_error"
+        ), 500
+
 
 @app.post("/api/signup")
 def signup():
@@ -249,14 +289,12 @@ def signup():
     password = data.get("password")
     profile = data.get("profile")
 
-    # Validate email or phone
     if not valid_id(uid):
         return jsonify(
             ok=False,
             error="invalid_id"
         ), 400
 
-    # Validate password
     password_issue = password_error(password)
 
     if password_issue:
@@ -265,14 +303,12 @@ def signup():
             error="weak_password"
         ), 400
 
-    # Require the profile sent by signup.js
     if not isinstance(profile, dict):
         return jsonify(
             ok=False,
             error="missing_profile"
         ), 400
 
-    # Get the patient's actual name
     name = str(
         profile.get("name") or ""
     ).strip()
@@ -283,15 +319,12 @@ def signup():
             error="invalid_name"
         ), 400
 
-    # Check whether this account already exists
     try:
         existing_user = db.get_user(uid)
-
     except Exception:
         app.logger.exception(
             "Unable to check existing patient account"
         )
-
         return jsonify(
             ok=False,
             error="database_error"
@@ -303,12 +336,9 @@ def signup():
             error="exists"
         ), 409
 
-    # Build the profile using the actual name.
-    # Email or phone is derived from the account identifier.
     patient_profile = default_profile(uid)
     patient_profile["name"] = name
 
-    # Hash the password before saving it.
     password_hash = generate_password_hash(password)
 
     try:
@@ -317,20 +347,16 @@ def signup():
             password_hash,
             patient_profile
         )
-
     except Exception:
         app.logger.exception(
             "Unable to create patient account"
         )
-
         return jsonify(
             ok=False,
             error="database_error"
         ), 500
 
     if not created:
-        # db.create_user() may return False for a duplicate
-        # or a database insertion failure.
         try:
             if db.get_user(uid):
                 return jsonify(
@@ -341,7 +367,6 @@ def signup():
             app.logger.exception(
                 "Unable to verify patient account creation"
             )
-
         return jsonify(
             ok=False,
             error="database_error"
@@ -353,10 +378,6 @@ def signup():
         profile=patient_profile
     ), 201
 
-
-# ---------------------------------------------------------
-# VERIFY LOGIN CREDENTIALS
-# ---------------------------------------------------------
 
 @app.post("/api/verify")
 def verify():
@@ -375,12 +396,10 @@ def verify():
 
     try:
         user = db.get_user(uid)
-
     except Exception:
         app.logger.exception(
             "Unable to retrieve patient account"
         )
-
         return jsonify(
             ok=False,
             reason="server_error"
@@ -398,366 +417,22 @@ def verify():
     ):
         return jsonify(
             ok=False,
-            reason="bad"
+            reason="none"
         )
-
-    # The login endpoint must complete the sign-in.
-    session["pending"] = uid
-
+        
+    # Mag-save sa session para sa local cookie tracking
+    session["uid"] = uid
     return jsonify(
         ok=True,
-        id=uid
+        id=uid,
+        profile=profile_of(user)
     )
 
 
 # ---------------------------------------------------------
-# LOGIN
+# SERVER INITIALIZATION
 # ---------------------------------------------------------
 
-@app.post("/api/login")
-def login():
-    """Create a signed-in patient session."""
-
-    uid = normalize(body().get("id"))
-
-    if (
-        not uid
-        or session.get("pending") != uid
-    ):
-        return jsonify(
-            ok=False,
-            error="verify_first"
-        ), 403
-
-    try:
-        user = db.get_user(uid)
-
-    except Exception:
-        app.logger.exception(
-            "Unable to retrieve account during login"
-        )
-
-        return jsonify(
-            ok=False,
-            error="database_error"
-        ), 500
-
-    if not user:
-        session.clear()
-
-        return jsonify(
-            ok=False,
-            error="account_not_found"
-        ), 403
-
-    session.clear()
-    session["uid"] = uid
-    session.permanent = True
-
-    return jsonify(ok=True)
-
-
-# ---------------------------------------------------------
-# LOGOUT
-# ---------------------------------------------------------
-
-@app.post("/api/logout")
-def logout():
-    """End the current session."""
-
-    session.clear()
-
-    return jsonify(ok=True)
-
-
-# ---------------------------------------------------------
-# CURRENT PATIENT
-# ---------------------------------------------------------
-
-@app.get("/api/me")
-def me():
-    """Return the signed-in patient and their saved data."""
-
-    uid = current()
-
-    if not uid:
-        # Sa FastAPI, maaari kang magbalik ng normal na dictionary directly bilang JSON response
-        return {"user": None}
-
-    try:
-        user = db.get_user(uid)
-
-        if not user:
-            # Kung walang session object ang FastAPI mo, mas ligtas na burahin muna ito o gumamit ng tamang response handling
-            return {"user": None}
-
-        return {
-            "user": {
-                "id": uid,
-                "profile": profile_of(user),
-                "data": db.get_all_data(uid),
-            }
-        }
-    except Exception as e:
-        # Sakaling may iba pang mag-error sa db.get_user, hindi sasabog ang server mo sa 500 error
-        print(f"Database/Profile Error: {e}")
-        return {"user": None}
-
-# ---------------------------------------------------------
-# SAVE PATIENT PROFILE
-# ---------------------------------------------------------
-
-@app.put("/api/profile")
-@login_required
-def save_profile(uid):
-    """Update the signed-in patient's profile."""
-
-    patch = body()
-
-    allowed_fields = (
-        "name",
-        "email",
-        "phone",
-        "code",
-        "photo",
-    )
-
-    # Reject oversized text fields
-    for key in ("name", "email", "phone", "code"):
-        if key in patch and len(str(patch[key])) > 200:
-            return jsonify(
-                ok=False,
-                error="too_long"
-            ), 400
-
-    # Only update permitted profile fields.
-    safe_patch = {
-        key: patch[key]
-        for key in allowed_fields
-        if key in patch
-    }
-
-    if "name" in safe_patch:
-        name = str(safe_patch["name"]).strip()
-
-        if not name:
-            return jsonify(
-                ok=False,
-                error="invalid_name"
-            ), 400
-
-        safe_patch["name"] = name
-
-    try:
-        db.update_profile(uid, safe_patch)
-
-        updated_user = db.get_user(uid)
-
-        if not updated_user:
-            return jsonify(
-                ok=False,
-                error="account_not_found"
-            ), 404
-
-        return jsonify(
-            ok=True,
-            profile=profile_of(updated_user)
-        )
-
-    except Exception:
-        app.logger.exception(
-            "Unable to update patient profile"
-        )
-
-        return jsonify(
-            ok=False,
-            error="database_error"
-        ), 500
-
-
-# ---------------------------------------------------------
-# CHECK CURRENT PASSWORD
-# ---------------------------------------------------------
-
-@app.post("/api/password/check")
-@login_required
-def password_check(uid):
-    """Verify the current password before changing it."""
-
-    password = body().get("password") or ""
-
-    try:
-        user = db.get_user(uid)
-
-        if not user:
-            return jsonify(
-                ok=False,
-                error="account_not_found"
-            ), 404
-
-        valid = check_password_hash(
-            user["pw_hash"],
-            password
-        )
-
-        if valid:
-            session["pw_verified_at"] = time.time()
-
-        return jsonify(ok=valid)
-
-    except Exception:
-        app.logger.exception(
-            "Unable to verify patient password"
-        )
-
-        return jsonify(
-            ok=False,
-            error="database_error"
-        ), 500
-
-
-# ---------------------------------------------------------
-# CHANGE PASSWORD
-# ---------------------------------------------------------
-
-@app.put("/api/password")
-@login_required
-def password_set(uid):
-    """Change the password after current-password verification."""
-
-    verified_at = session.get("pw_verified_at", 0)
-
-    if (
-        not isinstance(verified_at, (int, float))
-        or time.time() - verified_at > PW_VERIFIED_WINDOW
-    ):
-        return jsonify(
-            ok=False,
-            error="verify_current_password"
-        ), 403
-
-    password = body().get("password")
-
-    if password_error(password):
-        return jsonify(
-            ok=False,
-            error="weak_password"
-        ), 400
-
-    try:
-        db.set_password_hash(
-            uid,
-            generate_password_hash(password)
-        )
-
-        session.pop("pw_verified_at", None)
-
-        return jsonify(ok=True)
-
-    except Exception:
-        app.logger.exception(
-            "Unable to change patient password"
-        )
-
-        return jsonify(
-            ok=False,
-            error="database_error"
-        ), 500
-
-
-# ---------------------------------------------------------
-# DELETE ACCOUNT
-# ---------------------------------------------------------
-
-@app.delete("/api/account")
-@login_required
-def delete_account(uid):
-    """Delete the patient's account and associated data."""
-
-    try:
-        db.delete_user(uid)
-        session.clear()
-
-        return jsonify(ok=True)
-
-    except Exception:
-        app.logger.exception(
-            "Unable to delete patient account"
-        )
-
-        return jsonify(
-            ok=False,
-            error="database_error"
-        ), 500
-
-
-# ---------------------------------------------------------
-# PATIENT-SPECIFIC DATA
-# ---------------------------------------------------------
-
-@app.put("/api/data/<key>")
-@login_required
-def set_data(uid, key):
-    """Save patient-specific data, including appointments."""
-
-    if not DATA_KEY.fullmatch(key):
-        return jsonify(
-            ok=False,
-            error="bad_key"
-        ), 400
-
-    data = body()
-
-    if "value" not in data:
-        return jsonify(
-            ok=False,
-            error="missing_value"
-        ), 400
-
-    try:
-        db.set_data(
-            uid,
-            key,
-            data["value"]
-        )
-
-        return jsonify(ok=True)
-
-    except Exception:
-        app.logger.exception(
-            "Unable to save patient data"
-        )
-
-        return jsonify(
-            ok=False,
-            error="database_error"
-        ), 500
-
-
-# ---------------------------------------------------------
-# WEBSITE
-# ---------------------------------------------------------
-
-@app.get("/")
-def root():
-    """Serve the login page."""
-
-    return send_from_directory(
-        FRONTEND,
-        "index.html"
-    )
-
-
-# ---------------------------------------------------------
-# STARTUP
-# ---------------------------------------------------------
-
-db.init_db()
-
-
-if _name_ == "_main_":
-    app.run(
-        host="0.0.0.0",
-        port=int(os.environ.get("PORT", 5000)),
-        debug=os.environ.get("DEBUG") == "1"
-    )
+if __name__ == "__main__":
+    # Naka-on ang debug=True para makita ang error details sa console
+    app.run(debug=True, port=5000)
