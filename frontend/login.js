@@ -48,6 +48,17 @@ $("loginForm").onsubmit = (e) => {
   location.href = Auth.HOME;
 };
 
+// Siguraduhing may 'async' sa unahan ng function:
+$.onsubmit = async function(event) {
+  event.preventDefault();
+  
+  // Hanapin mo kung saan tinatawag si verify, lagyan mo ng 'await':
+  await auth.verify(); 
+  
+  // ... (iwanan mo lang kung ano ang kasunod na code mo dito sa ilalim)
+}
+
+
 /* ---------- Forgot password ---------- */
 $("forgotLink").onclick = (e) => {
   e.preventDefault();
