@@ -16,37 +16,27 @@
 
     /* ---------- Server calls ---------- */
 
-  async function call(method, path, body) {
-  try {
-    const options = {
-      method: method,
-      headers: {
-        "Content-Type": "application/json"
+  
+     function call(method, path, body) {
+    try {
+      const xhr = new XMLHttpRequest();
+      xhr.open(method, API + path, false);
+      xhr.setRequestHeader("Content-Type", "application/json");
+      xhr.send(body === undefined ? null : JSON.stringify(body));
+      
+      let data = {};
+      try { data = JSON.parse(xhr.responseText || "{}"); } catch (e) {}
+
+      // Log the server error details for easier debugging
+      if (xhr.status >= 500) {
+        console.error(`Server Error (${xhr.status}):`, data.error || xhr.responseText);
       }
-    };
 
-    if (body !== undefined) {
-      options.body = JSON.stringify(body);
+      return { status: xhr.status, data };
+    } catch (e) {
+      return { status: 0, data: { ok: false, error: "network" } };
     }
-
-    const response = await fetch(API + path, options);
-    
-    let data = {};
-    const text = await response.text();
-    if (text) {
-      try { data = JSON.parse(text); } catch (e) {}
-    }
-
-    if (response.status >= 500) {
-      console.error("Server Error (500):", data);
-    }
-
-    return { status: response.status, data };
-  } catch (e) {
-    console.error("Network or parsing execution exception:", e);
-    return { status: 0, data: { ok: false, error: "network" } };
   }
-}
 
 
     /* ---------- Cache of signed-in account ---------- */
